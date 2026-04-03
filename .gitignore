@@ -1,0 +1,13 @@
+tests/emcee_run/*.npy
+tests/emcee_run_init/*.npy
+tests/emcee_run_no_nnls/*.npy
+tests/emcee_run/*.pkl
+tests/emcee_run_init/*.pkl
+tests/emcee_run_no_nnls/*.pkl
+tests/nautilus_run/*.npy
+tests/nautilus_run_init/*.npy
+tests/nautilus_run_no_nnls/*.npy
+tests/optax_run/*.npy
+tests/optax_run_no_nnls/*.npy
+tests/optax_run/*.npz
+tests/optax_run_no_nnls/*.npz

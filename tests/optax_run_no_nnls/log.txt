@@ -1,0 +1,16 @@
+Parameter count breakdown (sampled/nonlinear dims): lens_mass=5, lens_light=0, source_light=11, point_source=3, total=19
+Linear amplitude count (NNLS dims): num_linear_amps=0 (use_nnls=False)
+Initial chi^2: 205092.12
+Displaying initial guess model...
+Running Optax chi2 optimization...
+  num_chains=8, num_steps=50000, step_size=0.001
+  use_nnls=False, num_linear_amps=0
+[optax] Optimization run time: 78.20 seconds
+[Optax] Best chi^2: 11328.00
+BIC: -61513.91
+Best log likelihood: 30844.45
+[Optax] Chi^2 of best fit model: 11328.00
+RA for lensed point source 0: -1.3680021661455755, -7.759929646353147e-07, 0.14019987672258954, 0.22133843444575707, 1.4287003295134895
+Dec for lensed point source 0: -0.1027384549774713, -7.759929646353147e-07, -1.5397810688110949, 1.5928997356414103, -0.1032417204027521
+Amplitudes for lensed point source 0: 1.2891025264030692e-06, 1e-20, 2.100018923004759e-06, 1.789416459048626e-06, 1.6753915504250243e-06
+

@@ -1,0 +1,28 @@
+{
+  "mean_autocorr_time": 145.55517345486192,
+  "effective_sample_size": 1758.7832429699802,
+  "min_recommended_chain_length": 7277.758672743095,
+  "acceptance_rate": 0.193780483991996,
+  "n_walkers": 128,
+  "n_run": 3000,
+  "n_burn": 1000,
+  "n_steps_kept": 2000,
+  "per_param_tau": {
+    "lens_e1_0": 148.9441097630817,
+    "lens_e2_0": 150.5203240988913,
+    "lens_gamma1_1": 149.08710468385357,
+    "lens_gamma2_1": 152.2706162684543,
+    "lens_theta_E_0": 150.56079908836645,
+    "ps_dec_0": 124.97452088621871,
+    "ps_ra_0": 133.40743967162925,
+    "source_R_sersic_0": 149.9421500415972,
+    "source_center_x_0": 145.08488229238665,
+    "source_center_x_1": 151.47786487529376,
+    "source_center_y_0": 150.20907209519882,
+    "source_center_y_1": 143.62519220493573,
+    "source_e1_0": 144.0774438855048,
+    "source_e2_0": 155.5545910514629,
+    "source_n_sersic_0": 131.74642649092374,
+    "source_sigma_1": 147.4002378799917
+  }
+}

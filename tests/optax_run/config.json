@@ -1,0 +1,162 @@
+{
+    "type_list": {
+        "lens_mass_type_list": [
+            "SIE",
+            "SHEAR"
+        ],
+        "lens_light_type_list": [],
+        "source_light_type_list": [
+            "SERSIC_ELLIPSE",
+            "GAUSSIAN"
+        ],
+        "point_source_type_list": [
+            "SOURCE_POSITION"
+        ]
+    },
+    "param_list": {
+        "lens_mass_params_list": [
+            {
+                "theta_E": [
+                    1.5,
+                    0.1,
+                    1.0,
+                    2.0
+                ],
+                "e1": [
+                    0.0,
+                    0.1,
+                    -0.5,
+                    0.5
+                ],
+                "e2": [
+                    0.0,
+                    0.1,
+                    -0.5,
+                    0.5
+                ],
+                "center_x": 0.0,
+                "center_y": 0.0
+            },
+            {
+                "ra_0": 0.0,
+                "dec_0": 0.0,
+                "gamma1": [
+                    0.0,
+                    0.1,
+                    -0.2,
+                    0.2
+                ],
+                "gamma2": [
+                    0.0,
+                    0.1,
+                    -0.2,
+                    0.2
+                ]
+            }
+        ],
+        "lens_light_params_list": [],
+        "source_light_params_list": [
+            {
+                "amp": [
+                    1.0,
+                    0.1
+                ],
+                "e1": [
+                    0.0,
+                    0.1,
+                    -0.1,
+                    0.1
+                ],
+                "e2": [
+                    0.0,
+                    0.1,
+                    -0.1,
+                    0.1
+                ],
+                "R_sersic": [
+                    0.2,
+                    0.1,
+                    0.01,
+                    0.5
+                ],
+                "n_sersic": [
+                    1.5,
+                    0.5,
+                    0.1,
+                    4.0
+                ],
+                "center_x": [
+                    0.0,
+                    0.1,
+                    -0.3,
+                    0.3
+                ],
+                "center_y": [
+                    0.0,
+                    0.1,
+                    -0.3,
+                    0.3
+                ]
+            },
+            {
+                "amp": [
+                    1.0,
+                    0.1
+                ],
+                "sigma": [
+                    0.05,
+                    0.01,
+                    0.01,
+                    0.1
+                ],
+                "center_x": [
+                    0.0,
+                    0.1,
+                    -0.5,
+                    0.5
+                ],
+                "center_y": [
+                    0.0,
+                    0.1,
+                    -0.5,
+                    0.5
+                ]
+            }
+        ],
+        "point_source_params_list": [
+            {
+                "amp": [
+                    1.0,
+                    0.1
+                ],
+                "ra": [
+                    0.0,
+                    0.1,
+                    -0.5,
+                    0.5
+                ],
+                "dec": [
+                    0.0,
+                    0.1,
+                    -0.5,
+                    0.5
+                ]
+            }
+        ]
+    },
+    "num_params_non_linear": 16,
+    "num_linear_amps": 3,
+    "kwargs_numerics_fit": {
+        "supersampling_factor": 2
+    },
+    "kwargs_lens_equation_solver_model": {
+        "nsolutions": 5,
+        "niter": 5,
+        "scale_factor": 2,
+        "nsubdivisions": 3
+    },
+    "ps_random_seed": 123456,
+    "sampler": "optax",
+    "use_nnls": true,
+    "linear_amp_jax_iter": 200
+}

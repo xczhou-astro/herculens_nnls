@@ -1,0 +1,58 @@
+{
+  "n_posterior_samples": 148100,
+  "ndim": 16,
+  "log_evidence_ln_z": 31334.181837767483,
+  "weighted_ess": 16391.182164682883,
+  "log_like_max": 31406.26165813293,
+  "log_like_median": 31282.169474393057,
+  "per_param_weighted_mean": {
+    "lens_e1_0": {
+      "weighted_mean": 0.12488774316326293
+    },
+    "lens_e2_0": {
+      "weighted_mean": 0.04053276879475988
+    },
+    "lens_gamma1_1": {
+      "weighted_mean": -0.01494305179648867
+    },
+    "lens_gamma2_1": {
+      "weighted_mean": 0.028285500036761658
+    },
+    "lens_theta_E_0": {
+      "weighted_mean": 1.4948140870874504
+    },
+    "ps_dec_0": {
+      "weighted_mean": 0.36358444735266626
+    },
+    "ps_ra_0": {
+      "weighted_mean": 0.08387152984683797
+    },
+    "source_R_sersic_0": {
+      "weighted_mean": 0.25515521486739995
+    },
+    "source_center_x_0": {
+      "weighted_mean": 0.0476025742648344
+    },
+    "source_center_x_1": {
+      "weighted_mean": 0.29413587026948784
+    },
+    "source_center_y_0": {
+      "weighted_mean": 0.0950320972358603
+    },
+    "source_center_y_1": {
+      "weighted_mean": 0.2908014829171885
+    },
+    "source_e1_0": {
+      "weighted_mean": 0.09131844664881773
+    },
+    "source_e2_0": {
+      "weighted_mean": 0.04750149942321149
+    },
+    "source_n_sersic_0": {
+      "weighted_mean": 3.3933600779839854
+    },
+    "source_sigma_1": {
+      "weighted_mean": 0.051948212651374386
+    }
+  }
+}
