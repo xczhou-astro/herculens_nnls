@@ -24,20 +24,20 @@ All three backends use JAX for performance. The emcee and nautilus pipelines can
 ### Model Fitting
 
 Optax:  
-``Python
+```Python
 python run_herculens.py --pixel_scale=0.08 --sampler=optax --gpus=6 --num_steps_optax=30_000 --num_chains_optax=8 --save_path=optax_run
-``  
+```  
 where `--num_chains_optax` enables multi-chain optimization, addressing the local minima problem.
 
 emcee:  
-``Python
+```Python
 python run_herculens.py --pixel_scale=0.08 --sampler=emcee --n_burn_emcee=1000 --n_steps_emcee=3000 --gpus=6 --save_path=emcee_run
-``
+```
 
 nautilus:  
-``Python
+```Python
 python run_herculens.py --pixel_scale=0.08 --sampler=nautilus --n_live_nautilus=1000 --gpus=6 --save_path=nautilus_run
-``
+```
 
 The NNLS is enabled by default, and can be disabled by `--use_nnls=False`.  
 Utilize the initial parameters from Optax, append `--init_params_path=optax_run/kwargs_result.json`  
@@ -47,7 +47,7 @@ Other configurations can be found in `herculens_nnls/configuration.py`
 ### Advanced
 For correlated parameters (one parameter follows another), the parameter list can be defined as the following example of multi-Gaussian expansion:
 
-``Python
+```Python
 num_gaussian_sets = 3
 num_gaussian_per_set = 30
 
@@ -86,7 +86,9 @@ for i in range(num_gaussian_sets):
                     'e2': ['correlated', 'lens_light', geometry_head, 'e2'],
                 }
             )
-``  
+```  
+If using NNLS, the amplitudes are ignored, and this lens light model only introduces $4\times3=12$ nonlinear parameters for sampling.
+
 The amplitudes are ignored when using NNLS. 
 
 ## Acknowledgement
