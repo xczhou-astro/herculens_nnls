@@ -3,8 +3,8 @@ import numpy as np
 from herculens.Util import model_util
 import corner
 
-from utils import json_serializer
-from models import batch_log_likelihood, get_init_params, solve_linear_amplitudes_jax
+from .utils import json_serializer
+from .models import batch_log_likelihood, get_init_params, solve_linear_amplitudes_jax
 import joblib
 import jax.numpy as jnp
 import json
@@ -606,7 +606,6 @@ def display_init(
     print(f'Initial chi^2: {init_chi2:.2f}')
     
     print('Displaying initial guess model...')
-    from visualizations import display
 
     display(
         [initial_model, image_data, (initial_model - image_data) / noise_map],

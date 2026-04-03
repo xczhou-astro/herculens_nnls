@@ -11,3 +11,4 @@ tests/optax_run/*.npy
 tests/optax_run_no_nnls/*.npy
 tests/optax_run/*.npz
 tests/optax_run_no_nnls/*.npz
+herculens_run/__pycache__/

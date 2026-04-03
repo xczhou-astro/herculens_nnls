@@ -10,7 +10,13 @@ import matplotlib.pyplot as plt
 from nautilus import Sampler
 from scipy.stats import norm
 
-from models import _nnls_jax_fista, apply_nnls_coefficients_to_kwargs_jax, build_linear_amp_design_matrix_jax, _normalize_link_spec, get_init_params
+from .models import (
+    _nnls_jax_fista,
+    apply_nnls_coefficients_to_kwargs_jax,
+    build_linear_amp_design_matrix_jax,
+    _normalize_link_spec,
+    get_init_params,
+)
 
 def run_optax(
     prob_model, 
