@@ -26,7 +26,7 @@ All three backends use JAX for performance. The emcee and nautilus pipelines can
 Optax:  
 ``Python
 python run_herculens.py --pixel_scale=0.08 --sampler=optax --gpus=6 --num_steps_optax=30_000 --num_chains_optax=8 --save_path=optax_run
-``
+``  
 where `--num_chains_optax` enables multi-chain optimization, addressing the local minima problem.
 
 emcee:  
