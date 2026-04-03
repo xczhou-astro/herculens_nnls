@@ -1,13 +1,20 @@
 # herculens_nnls
 Implementation of non-negative least squares (NNLS) for strong lensing modeling by Herculens
 
-## Why
-The herculens is a great SL modeling tool. However, due to the usage of numpyro and gradient-based sampling methods such as Hamiltonian Monte Carlo (HMC) require amplitudes as non-linear sampling parameters, they do not implement the non-negative least squares (NNLS) for solving the amplitudes. This introduce a lot of extra parameters, especially when using the multi-gaussian expansion (MGE) to model the source light. 
+## Goals
+[Herculens](https://github.com/herculens/herculens) is a strong lensing (SL) modeling framework built around NumPyro and gradient-based samplers such as Hamiltonian Monte Carlo (HMC). In that setting, amplitudes are sampled as nonlinear parameters rather than obtained with non-negative least squares (NNLS), which inflates the parameter space—especially when the source is modeled with a multi-Gaussian expansion (MGE).
 
-Therefore, we implement the NNLS into the code to reduce the number of non-linear parameters. Currently, we support the several sampling methods, including optax, MCMC by emcee, and nautilus.  
-Optax is a deterministic sampler based on gradient descend similar to a neural network. This sampler can provide the point estimate for the parameters of lens model. The parameters can serve as an initial for the MCMC or nautilus sampler.
+This project adds NNLS implementation, so fewer nonlinear parameters need to be sampled. It currently supports several backends: **Optax** (deterministic optimization), **emcee** (MCMC), and **nautilus** (nested sampling).
 
-The optax, emcee, and nautilus samplers all use JAX to accelerate the sampling speed. Note that the emcee and nautilus run on GPU natively, and we only implement the NNLS in JAX for fast likelihood creation. While optax can be fully built to JAX, which provides extremely fast sampling. 
+Optax performs gradient-based optimization (analogous in spirit to training a neural network) and yields point estimates of the lens-model parameters, which can initialize emcee or nautilus for full posterior exploration.
+
+All three backends use JAX for performance. The emcee and nautilus pipelines can use GPU acceleration in likelihood evaluation and NNLS calculation in JAX for efficiency. Optax is implemented end-to-end in JAX and is especially fast for point estimation.
+
+## Dependencies
+- [Herculens](https://github.com/herculens/herculens)  
+- [nautilus-sampler](https://nautilus-sampler.readthedocs.io/en/latest/)
+- [emcee](https://emcee.readthedocs.io/en/stable/)
+- [corner](https://corner.readthedocs.io/en/latest/)
 
 ## Usage
 
@@ -20,6 +27,7 @@ Optax:
 ``Python
 python run_herculens.py --pixel_scale=0.08 --sampler=optax --gpus=6 --num_steps_optax=30_000 --num_chains_optax=8 --save_path=optax_run
 ``
+where `--num_chains_optax` enables multi-chain optimization, addressing the local minima problem.
 
 emcee:  
 ``Python
@@ -31,8 +39,8 @@ nautilus:
 python run_herculens.py --pixel_scale=0.08 --sampler=nautilus --n_live_nautilus=1000 --gpus=6 --save_path=nautilus_run
 ``
 
-The NNLS is default, and can be disabled by `--use_nnls=False`.  
-Utilize the initial parameters from optax, append `--init_params_path=optax_run/kwargs_result.json`  
+The NNLS is enabled by default, and can be disabled by `--use_nnls=False`.  
+Utilize the initial parameters from Optax, append `--init_params_path=optax_run/kwargs_result.json`  
 
 Other configurations can be found in `herculens_nnls/configuration.py`
 
