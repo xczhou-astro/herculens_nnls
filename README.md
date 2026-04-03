@@ -51,7 +51,7 @@ For correlated parameters (one parameter follows another), the parameter list ca
 num_gaussian_sets = 3
 num_gaussian_per_set = 30
 
-num_total_gaussian = num_gaussian_sets * num_gaussian_per_set + num_extra_gaussian
+num_total_gaussian = num_gaussian_sets * num_gaussian_per_set
 
 lens_light_type_list = ['GAUSSIAN_ELLIPSE'] * num_total_gaussian
 
