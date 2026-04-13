@@ -113,3 +113,8 @@ def print_emcee_parameter_uncertainties(flat_samples, init_params):
         print(f"  {name}: {q50[i]:.6g} -{err_lo[i]:.6g} +{err_hi[i]:.6g}")
 
 
+def convert_to_array(idx):
+    if isinstance(idx, str):
+        parts = [p.strip() for p in idx.split(',') if p.strip()]
+        return np.array([int(i) for i in parts], dtype=int)
+    raise ValueError(f'Invalid type for image index string: {type(idx)}')

@@ -42,7 +42,8 @@ python run_herculens.py --pixel_scale=0.08 --sampler=nautilus --n_live_nautilus=
 The NNLS is enabled by default, and can be disabled by `--use_nnls=False`.  
 Utilize the initial parameters from Optax, append `--init_params_path=optax_run/kwargs_result.json`  
 
-Other configurations can be found in `herculens_nnls/configuration.py`
+Other configurations can be found in `configuration.py`
+The modeling configurations can be modified in `model_config.py`
 
 ### Advanced
 For correlated parameters (one parameter follows another), the parameter list can be defined as the following example of multi-Gaussian expansion:

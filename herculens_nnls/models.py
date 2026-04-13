@@ -996,3 +996,130 @@ def create_lens_image(
     )
 
     return lens_image
+
+def validate_param_list(type_list, param_list):
+    """
+    Ensure type_list / param_list use matching keys and equal list lengths per component,
+    and that every ``['correlated', component, index, param_name]`` entry points to a
+    base parameter that exists and is visible when the probabilistic model is built
+    (same rules as ``create_prob_model`` / ``_resolve_link``).
+    """
+    if not isinstance(type_list, dict) or not isinstance(param_list, dict):
+        raise TypeError("type_list and param_list must be dicts.")
+
+    _PAIRS = (
+        ("lens_mass_type_list", "lens_mass_params_list"),
+        ("lens_light_type_list", "lens_light_params_list"),
+        ("source_light_type_list", "source_light_params_list"),
+        ("point_source_type_list", "point_source_params_list"),
+    )
+
+    for type_key, param_key in _PAIRS:
+        has_t = type_key in type_list
+        has_p = param_key in param_list
+        if has_t != has_p:
+            raise ValueError(
+                f"type_list and param_list must both contain '{type_key}' and '{param_key}', "
+                f"or omit both; found type={has_t}, params={has_p}."
+            )
+        if has_t:
+            tl, pl = type_list[type_key], param_list[param_key]
+            if not isinstance(tl, (list, tuple)):
+                raise TypeError(f"{type_key} must be a list, got {type(tl).__name__}.")
+            if not isinstance(pl, (list, tuple)):
+                raise TypeError(f"{param_key} must be a list, got {type(pl).__name__}.")
+            if len(tl) != len(pl):
+                raise ValueError(
+                    f"Length mismatch: {type_key} has {len(tl)} entries but {param_key} has {len(pl)}."
+                )
+
+    # Bank construction order in create_prob_model: lens → lens_light → source → point_source
+    _SECTION_RANK = {
+        "lens_mass_params_list": 0,
+        "lens_light_params_list": 1,
+        "source_light_params_list": 2,
+        "point_source_params_list": 3,
+    }
+    _TARGET_RANK = {"lens": 0, "lens_light": 1, "source": 2, "point_source": 3}
+    _PARAM_LIST_BY_TARGET = {
+        "lens": "lens_mass_params_list",
+        "lens_light": "lens_light_params_list",
+        "source": "source_light_params_list",
+        "point_source": "point_source_params_list",
+    }
+
+    def _lengths():
+        return {
+            "lens": len(param_list.get("lens_mass_params_list", [])),
+            "lens_light": len(param_list.get("lens_light_params_list", [])),
+            "source": len(param_list.get("source_light_params_list", [])),
+            "point_source": len(param_list.get("point_source_params_list", [])),
+        }
+
+    def _check_link(section_key, model_idx, field_name, param_val):
+        if not _is_correlated_param(param_val):
+            return
+        ctx = f"{section_key}[{model_idx}].{field_name}"
+        try:
+            spec = _normalize_link_spec(param_val)
+        except ValueError as e:
+            raise ValueError(f"Invalid correlated spec at {ctx}: {e}") from e
+        if spec is None:
+            return
+        tgt_comp, tgt_idx, tgt_key = spec
+        lens = _lengths()
+        if tgt_comp not in lens:
+            raise ValueError(f"Correlated spec at {ctx} has unknown target component {tgt_comp!r}.")
+        n = lens[tgt_comp]
+        if tgt_idx < 0 or tgt_idx >= n:
+            raise IndexError(
+                f"Correlated spec at {ctx} targets {tgt_comp}[{tgt_idx}], but there are only {n} such component(s)."
+            )
+        plist_key = _PARAM_LIST_BY_TARGET[tgt_comp]
+        base_model = param_list[plist_key][tgt_idx]
+        if not isinstance(base_model, dict):
+            raise TypeError(f"Expected dict at {plist_key}[{tgt_idx}], got {type(base_model).__name__}.")
+        if tgt_key not in base_model:
+            raise KeyError(
+                f"Correlated field at {ctx} points to {tgt_comp}[{tgt_idx}].{tgt_key!r}, "
+                f"but that base entry is missing. Available keys: {sorted(base_model.keys())}."
+            )
+
+        from_rank = _SECTION_RANK[section_key]
+        tgt_r = _TARGET_RANK[tgt_comp]
+        if tgt_r > from_rank:
+            raise ValueError(
+                f"Correlated field at {ctx} references {tgt_comp} (rank {tgt_r}), which is not built yet "
+                f"when sampling {section_key} (rank {from_rank}). Use an earlier component as the base."
+            )
+        if tgt_r == from_rank and tgt_idx >= model_idx:
+            raise ValueError(
+                f"Correlated field at {ctx} must reference a strictly earlier model in the same section "
+                f"(need index < {model_idx}, got {tgt_idx})."
+            )
+
+    for i, model in enumerate(param_list.get("lens_mass_params_list", [])):
+        if not isinstance(model, dict):
+            raise TypeError(f"lens_mass_params_list[{i}] must be a dict, got {type(model).__name__}.")
+        for k, v in model.items():
+            _check_link("lens_mass_params_list", i, k, v)
+
+    for i, model in enumerate(param_list.get("lens_light_params_list", [])):
+        if not isinstance(model, dict):
+            raise TypeError(f"lens_light_params_list[{i}] must be a dict, got {type(model).__name__}.")
+        for k, v in model.items():
+            _check_link("lens_light_params_list", i, k, v)
+
+    for i, model in enumerate(param_list.get("source_light_params_list", [])):
+        if not isinstance(model, dict):
+            raise TypeError(f"source_light_params_list[{i}] must be a dict, got {type(model).__name__}.")
+        for k, v in model.items():
+            _check_link("source_light_params_list", i, k, v)
+
+    for i, model in enumerate(param_list.get("point_source_params_list", [])):
+        if not isinstance(model, dict):
+            raise TypeError(f"point_source_params_list[{i}] must be a dict, got {type(model).__name__}.")
+        for k, v in model.items():
+            if k in ("n_images", "sigma_image", "sigma_source"):
+                continue
+            _check_link("point_source_params_list", i, k, v)

@@ -3,18 +3,28 @@ import os
 import json
 import datetime
 import sys
+import shlex
+import pandas as pd
+from astropy.io import fits
 
 def _configure_cuda_from_args(args):
     """Configure CUDA before importing JAX."""
     os.environ["CUDA_VISIBLE_DEVICES"] = str(args.gpus)
     os.environ.setdefault("XLA_PYTHON_CLIENT_PREALLOCATE", "false")
 
-
+    
 if __name__ == '__main__':
-    from herculens_nnls.configurations import get_parser
+    from configurations import get_parser
 
     args = get_parser()
     _configure_cuda_from_args(args)
+
+    from model_config import (
+        lens_mass_config,
+        lens_light_config,
+        source_light_config,
+        point_source_config,
+    )
 
     # JAX (import only after CUDA is configured)
     import jax
@@ -32,6 +42,7 @@ if __name__ == '__main__':
         get_fits_data,
         print_emcee_parameter_uncertainties,
         _pytree_flat_param_labels,
+        convert_to_array,
     )
     from herculens_nnls.models import (
         create_prob_model,
@@ -40,6 +51,7 @@ if __name__ == '__main__':
         linear_amp_component_labels,
         apply_nnls_coefficients_to_kwargs_jax,
         create_lens_image,
+        validate_param_list,
     )
     from herculens_nnls.samplers import (
         run_optax,
@@ -53,23 +65,23 @@ if __name__ == '__main__':
         plot_loss_curve,
         plot_image_plane,
         plot_source_plane,
+        plot_catalog_source_trace,
+        plot_lens_light_subtracted_image,
         plot_corner_traced_params,
-        post_process,
         plot_input_data,
         plot_corner_nautilus,
         display_init,
+        plot_ps_photometry,
     )
 
     if args.save_path is None:
 
         formatted_datetime = datetime.datetime.now().strftime("%Y%m%d%H%M")
         save_path = f'herculens_run/{formatted_datetime}'
-        
+
         if args.debug:
             save_path = f'herculens_run/{args.sampler}_test'
 
-        if args.test_ps_positions:
-            save_path = f'herculens_run_ps/{formatted_datetime}_{args.ps_random_seed}'
     else:
         save_path = args.save_path
     
@@ -81,6 +93,12 @@ if __name__ == '__main__':
     sys.stdout = Tee(sys.stdout, log_file)
     sys.stderr = Tee(sys.stderr, log_file)
 
+    # Record the exact invocation for reproducibility.
+    invoked_command = shlex.join([sys.executable, *sys.argv])
+    print(f"Invoked command: ")
+    print(invoked_command)
+    print(f"Working directory: {os.getcwd()}")
+
     image_data = get_fits_data(args.data_path)
     noise_map = get_fits_data(args.noise_path)
     psf_data = get_fits_data(args.psf_path)
@@ -89,61 +107,49 @@ if __name__ == '__main__':
         image_data = center_crop(image_data, args.crop_size)
         noise_map = center_crop(noise_map, args.crop_size)
 
-    lens_mass_type_list = ['SIE', 'SHEAR']
-    lens_mass_params_list = [
-        {
-            'theta_E': [1.5, 0.1, 1.0, 2.0],
-            'e1': [0.0, 0.1, -0.5, 0.5],
-            'e2': [0.0, 0.1, -0.5, 0.5],
-            'center_x': 0.0,
-            'center_y': 0.0,
-        },
-        {
-            'ra_0': 0.0,
-            'dec_0': 0.0,
-            'gamma1': [0.0, 0.1, -0.2, 0.2],
-            'gamma2': [0.0, 0.1, -0.2, 0.2],
-        }
-    ]
+    if args.mask_path is not None:
+        mask_file = fits.open(args.mask_path)
+        all_mask = mask_file[0].data
 
-    lens_light_type_list = []
-    lens_light_params_list = []
+        if args.relieve_mask_indices is not None:
+            relieve_mask_indices = convert_to_array(args.relieve_mask_indices)
+            for i in relieve_mask_indices:
+                mask_comp = mask_file[i].data
+                # Flip 1 to 0 and 0 to 1 for mask_comp
+                mask_comp = np.where(mask_comp > 0.5, 0.0, 1.0)
+                all_mask = all_mask + mask_comp
 
-    source_light_type_list = ['SERSIC_ELLIPSE', 'GAUSSIAN']
-    source_light_params_list = [
-        {
-            'amp': [1.0, 0.1],
-            'e1': [0.0, 0.1, -0.1, 0.1],
-            'e2': [0.0, 0.1, -0.1, 0.1],
-            'R_sersic': [0.2, 0.1, 0.01, 0.5],
-            'n_sersic': [1.5, 0.5, 0.1, 4.0],
-            'center_x': [0.0, 0.1, -0.3, 0.3],
-            'center_y': [0.0, 0.1, -0.3, 0.3],
-        },
-        {
-            'amp': [1.0, 0.1],
-            'sigma': [0.05, 0.01, 0.01, 0.1],
-            'center_x': [0.0, 0.1, -0.5, 0.5],
-            'center_y': [0.0, 0.1, -0.5, 0.5],
-        }
-    ]
+        mask = all_mask
+ 
+        mask_bool = mask > 0.5
+        image_data = image_data * mask_bool
+        noise_map = np.where(mask_bool, noise_map, 1e10)
 
-    point_source_type_list = ['SOURCE_POSITION']
-    point_source_params_list = [
-        {
-            'amp': [1.0, 0.1],
-            'ra': [0.0, 0.1, -0.5, 0.5],
-            'dec': [0.0, 0.1, -0.5, 0.5],
-        }
-    ]
+    pixel_scale = 0.03
 
+    lens_mass_type_list, lens_mass_params_list = lens_mass_config()
+
+    lens_light_type_list, lens_light_params_list = lens_light_config(
+        image_size=image_data.shape[0], pixel_scale=pixel_scale)
+
+    source_light_type_list, source_light_params_list = source_light_config()
+    
+    if not args.exclude_ps:
+
+        point_source_type_list, point_source_params_list = point_source_config(args=args)
+    
+    else:
+        print('No point sources')
+        point_source_type_list = []
+        point_source_params_list = []
+        
     kwargs_numerics_fit = {
         'supersampling_factor': 2,
     }
 
     kwargs_lens_equation_solver_model = {
         'nsolutions': 5,
-        'niter': 5,
+        'niter': 10,
         'scale_factor': 2,
         'nsubdivisions': 3,
     }
@@ -162,9 +168,7 @@ if __name__ == '__main__':
         'point_source_type_list': point_source_type_list,
     }
 
-    if args.exclude_ps:
-        param_list.pop('point_source_params_list')
-        type_list.pop('point_source_type_list')
+    validate_param_list(type_list, param_list)
 
     lens_image = create_lens_image(
         param_list=param_list,
@@ -183,9 +187,35 @@ if __name__ == '__main__':
         psf_data=psf_data,
         pixel_scale=args.pixel_scale,
         save_path=save_path,
-        point_source_type_list=point_source_type_list if not args.exclude_ps else None,
-        point_source_params_list=point_source_params_list if not args.exclude_ps else None,
+        point_source_type_list=point_source_type_list,
+        point_source_params_list=point_source_params_list
     )
+
+    try:
+        if (
+            not args.exclude_ps
+            and point_source_type_list
+            and point_source_type_list[0] == 'IMAGE_POSITIONS'
+        ):
+            groups = []
+            complete = True
+            for k in range(1, args.num_sources + 1):
+                raw = getattr(args, f'images_idx_{k}', None)
+                if raw is None:
+                    if k == 1 and args.first_images_idx is not None:
+                        raw = args.first_images_idx
+                    elif k == 2 and args.second_images_idx is not None:
+                        raw = args.second_images_idx
+                if raw is None:
+                    complete = False
+                    break
+                parts = [p.strip() for p in str(raw).split(',') if p.strip()]
+                groups.append(np.array([int(x) for x in parts], dtype=int))
+            if complete and len(groups) == args.num_sources:
+                ps_cat = pd.read_csv(args.image_positions_catalog)
+                plot_ps_photometry(ps_cat, groups, save_path)
+    except Exception as e:
+        print(f"[run] plot_ps_photometry skipped: {e}")
 
     if source_light_type_list[0] == 'PIXELATED':
         regularization_terms = [
@@ -217,7 +247,6 @@ if __name__ == '__main__':
                 'num_linear_amps': num_linear_amps,
                 'kwargs_numerics_fit': kwargs_numerics_fit,
                 'kwargs_lens_equation_solver_model': kwargs_lens_equation_solver_model,
-                'ps_random_seed': args.ps_random_seed,
                 'sampler': args.sampler,
                 'use_nnls': args.use_nnls,
                 'linear_amp_jax_iter': args.linear_amp_jax_iter,
@@ -285,25 +314,59 @@ if __name__ == '__main__':
         with open(f'{save_path}/kwargs_result.json', 'w') as f:
             json.dump(kwargs_best_emcee, f, indent=4, default=json_serializer)
 
-        if not args.use_nnls:
-            # Reuse existing posterior post-processing utilities.
-            post_process(
-                prob_model, lens_image, samples_emcee,
-                image_data, noise_map, args.pixel_scale,
-                num_params_non_linear, save_path, ll_batch_size=1024
+        try:
+            plot_lens_light_subtracted_image(
+                lens_image,
+                kwargs_best_emcee,
+                args.pixel_scale,
+                image_data,
+                noise_map=noise_map,
+                save_path=save_path,
             )
+        except Exception as e:
+            print(f"[emcee] plot_lens_light_subtracted_image skipped: {e}")
+
+        best_fit_model = lens_image.model(**kwargs_best_emcee)
+        chi2_best = np.sum(((best_fit_model - image_data) / noise_map) ** 2)
+        if args.use_nnls:
+            # NumPyro obs site uses unit amplitudes; match Gaussian log-likelihood to chi^2 (same as Optax).
+            best_log_likelihood = -0.5 * float(chi2_best)
         else:
-            best_fit_model = lens_image.model(**kwargs_best_emcee)
-            chi2_best = np.sum(((best_fit_model - image_data) / noise_map) ** 2)
-            print(f'[emcee+NNLS] Chi^2 of best fit model: {chi2_best:.2f}')
-            display(
-                [best_fit_model, image_data, (best_fit_model - image_data) / noise_map],
-                titles=['Best fit model', 'image data', f'Residuals (chi2 = {chi2_best:.2f})'],
-                pixel_scale=args.pixel_scale,
-                savefilename=f'{save_path}/best_fit_model.png'
+            best_log_likelihood = float(prob_model.log_likelihood(best_params_emcee))
+        total_pixels = image_data.size
+        bic = num_params_non_linear * np.log(total_pixels) - 2 * best_log_likelihood
+        print(f'BIC: {bic:.2f}')
+        print(f'Best log likelihood: {best_log_likelihood:.2f}')
+        _emcee_tag = '[emcee+NNLS]' if args.use_nnls else '[emcee]'
+        print(f'{_emcee_tag} Chi^2 of best fit model: {chi2_best:.2f}')
+        with open(f'{save_path}/metrics.json', 'w') as f:
+            json.dump(
+                {
+                    'BIC': float(bic),
+                    'CHI2': float(chi2_best),
+                },
+                f,
+                indent=4,
+                default=json_serializer,
             )
-            plot_image_plane(lens_image, kwargs_best_emcee, args.pixel_scale, image_data, noise_map, save_path)
-            plot_source_plane(lens_image, kwargs_best_emcee, save_path)
+        display(
+            [best_fit_model, image_data, (best_fit_model - image_data) / noise_map],
+            titles=['Best fit model', 'image data', f'Residuals (chi2 = {chi2_best:.2f})'],
+            pixel_scale=args.pixel_scale,
+            savefilename=f'{save_path}/best_fit_model.png'
+        )
+        plot_image_plane(lens_image, kwargs_best_emcee, args.pixel_scale, image_data, noise_map, save_path)
+        plot_source_plane(lens_image, kwargs_best_emcee, save_path)
+        try:
+            plot_catalog_source_trace(
+                lens_image=lens_image,
+                kwargs_result=kwargs_best_emcee,
+                image_data=image_data,
+                pixel_scale=args.pixel_scale,
+                save_path=save_path,
+            )
+        except Exception as e:
+            print(f"[emcee] plot_catalog_source_trace skipped: {e}")
 
         try:
             plot_corner_traced_params(samples_emcee, save_path)
@@ -326,7 +389,7 @@ if __name__ == '__main__':
 
     elif args.sampler == 'optax':
 
-        best_params, chi2_curve, best_chi2, best_nnls_coefs = run_optax(
+        best_params, chi2_curve, best_chi2, best_nnls_coefs, lr_curve = run_optax(
             prob_model=prob_model,
             use_nnls=args.use_nnls,
             num_linear_amps=num_linear_amps,
@@ -337,6 +400,14 @@ if __name__ == '__main__':
             image_data=image_data,
             noise_map=noise_map,
             step_size=args.step_size_optax, 
+            min_step_size=args.min_step_size_optax,
+            lr_decay_factor=args.lr_decay_factor_optax,
+            lr_patience=args.lr_patience_optax,
+            lr_min_delta=args.lr_min_delta_optax,
+            enable_lr_decay=args.enable_lr_decay_optax,
+            enable_early_stopping=args.enable_early_stopping_optax,
+            early_stopping_patience=args.early_stopping_patience_optax,
+            early_stopping_min_delta=args.early_stopping_min_delta_optax,
             num_steps=args.num_steps_optax,
             clip_norm=args.clip_norm_optax,
             num_chains=args.num_chains_optax,
@@ -348,7 +419,9 @@ if __name__ == '__main__':
 
         print(f"[Optax] Best chi^2: {best_chi2:.2f}")
         np.save(f"{save_path}/optax_chi2_curve.npy", chi2_curve)
-        plot_loss_curve(chi2_curve, save_path)
+        if lr_curve is not None:
+            np.save(f"{save_path}/optax_lr_curve.npy", lr_curve)
+        plot_loss_curve(chi2_curve, save_path, lr_curve=lr_curve)
         
         kwargs_best = prob_model.params2kwargs(best_params)
         linear_amp_coefs_out = None
@@ -417,7 +490,29 @@ if __name__ == '__main__':
 
         plot_image_plane(lens_image, kwargs_best, args.pixel_scale, image_data, noise_map, save_path)
         plot_source_plane(lens_image, kwargs_best, save_path)
- 
+        try:
+            plot_catalog_source_trace(
+                lens_image=lens_image,
+                kwargs_result=kwargs_best,
+                image_data=image_data,
+                pixel_scale=args.pixel_scale,
+                save_path=save_path,
+            )
+        except Exception as e:
+            print(f"[optax] plot_catalog_source_trace skipped: {e}")
+
+        try:
+            plot_lens_light_subtracted_image(
+                lens_image,
+                kwargs_best,
+                args.pixel_scale,
+                image_data,
+                noise_map=noise_map,
+                save_path=save_path,
+            )
+        except Exception as e:
+            print(f"[optax] plot_lens_light_subtracted_image skipped: {e}")
+
         try:
             plotter = Plotter(base_fontsize=18, flux_vmin=1e-3, flux_vmax=1e0, res_vmax=6)
             fig = plotter.model_summary(lens_image, kwargs_best)
@@ -525,6 +620,28 @@ if __name__ == '__main__':
 
         plot_image_plane(lens_image, kwargs_best_nautilus, args.pixel_scale, image_data, noise_map, save_path)
         plot_source_plane(lens_image, kwargs_best_nautilus, save_path)
+        try:
+            plot_catalog_source_trace(
+                lens_image=lens_image,
+                kwargs_result=kwargs_best_nautilus,
+                image_data=image_data,
+                pixel_scale=args.pixel_scale,
+                save_path=save_path,
+            )
+        except Exception as e:
+            print(f"[nautilus] plot_catalog_source_trace skipped: {e}")
+
+        try:
+            plot_lens_light_subtracted_image(
+                lens_image,
+                kwargs_best_nautilus,
+                args.pixel_scale,
+                image_data,
+                noise_map=noise_map,
+                save_path=save_path,
+            )
+        except Exception as e:
+            print(f"[nautilus] plot_lens_light_subtracted_image skipped: {e}")
 
         try:
             plotter = Plotter(base_fontsize=18, flux_vmin=1e-3, flux_vmax=1e0, res_vmax=6)

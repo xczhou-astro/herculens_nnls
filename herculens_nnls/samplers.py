@@ -29,6 +29,14 @@ def run_optax(
     image_data=None,
     noise_map=None, 
     step_size=1e-3,
+    min_step_size=1e-6,
+    lr_decay_factor=0.5,
+    lr_patience=1000,
+    lr_min_delta=0.0,
+    enable_lr_decay=True,
+    enable_early_stopping=False,
+    early_stopping_patience=3000,
+    early_stopping_min_delta=0.0,
     num_steps=5000, 
     clip_norm=1.0,
     num_chains=8, 
@@ -40,6 +48,14 @@ def run_optax(
     print('Running Optax chi2 optimization...')
     print(f'  num_chains={num_chains}, num_steps={num_steps}, step_size={step_size}')
     print(f'  use_nnls={use_nnls}, num_linear_amps={num_linear_amps}')
+    print(
+        f'  lr_decay={enable_lr_decay}, lr_patience={lr_patience}, '
+        f'lr_decay_factor={lr_decay_factor}, min_step_size={min_step_size}'
+    )
+    print(
+        f'  early_stopping={enable_early_stopping}, '
+        f'early_stopping_patience={early_stopping_patience}'
+    )
 
     rng_key = jax.random.PRNGKey(random_seed)
 
@@ -96,9 +112,11 @@ def run_optax(
     valgrad_single = jax.value_and_grad(chi2_loss_single, has_aux=True)
     valgrad_batched = jax.vmap(valgrad_single)
 
+    # Keep Adam moments in opt_state; apply dynamic scalar learning rate in the scan body.
     optimizer = optax.chain(
         optax.clip_by_global_norm(clip_norm),
-        optax.adam(step_size),
+        optax.scale_by_adam(),
+        optax.scale(-1.0),
     )
 
     def _add_jitter(key, x):
@@ -128,37 +146,122 @@ def run_optax(
     def tree_take0(pytree, idx):
         return jax.tree_util.tree_map(lambda x: x[idx], pytree)
 
+    # Progress logging inside JIT (jax.debug.print); every 500 scan steps.
+    _optax_log_interval = 500
+
+    def _optax_scan_log(one_based):
+        jax.debug.print("[optax] {n} steps finished !", n=one_based)
+        return jnp.int32(0)
+
+    def _optax_scan_no_log(_):
+        return jnp.int32(0)
+
     # 3. The Fully Compiled Optimization Step
-    def step(carry, _):
-        params_u, opt_state, best_params_u, best_chi2, prev_coefs, best_coefs = carry
-
-        (chi2_vals, new_coefs), grads = valgrad_batched(params_u, prev_coefs)
-
-        is_better = chi2_vals < best_chi2
-        best_chi2 = jnp.minimum(best_chi2, chi2_vals)
-        best_params_u = jax.tree_util.tree_map(
-            lambda bp, p: jnp.where(
-                is_better.reshape((num_chains,) + (1,) * (p.ndim - 1)), p, bp
-            ),
-            best_params_u,
-            params_u,
+    def step(carry, step_idx):
+        one_based = step_idx + 1
+        _ = jax.lax.cond(
+            (one_based % _optax_log_interval) == 0,
+            _optax_scan_log,
+            _optax_scan_no_log,
+            one_based,
         )
-        best_coefs = jnp.where(is_better[:, None], new_coefs, best_coefs)
 
-        updates, opt_state = jax.vmap(optimizer.update)(grads, opt_state, params_u)
-        params_u = optax.apply_updates(params_u, updates)
+        (
+            params_u,
+            opt_state,
+            best_params_u,
+            best_chi2,
+            prev_coefs,
+            best_coefs,
+            current_step_size,
+            best_metric_global,
+            lr_bad_count,
+            es_bad_count,
+            done,
+            last_chi2_vals,
+        ) = carry
 
-        return (params_u, opt_state, best_params_u, best_chi2, new_coefs, best_coefs), chi2_vals
+        def _done_branch(_):
+            (_, _, _, _, _, _, current_step_size, _, _, _, _, last_chi2_vals) = carry
+            return carry, (last_chi2_vals, current_step_size)
+
+        def _active_branch(_):
+            (chi2_vals, new_coefs), grads = valgrad_batched(params_u, prev_coefs)
+
+            is_better = chi2_vals < best_chi2
+            next_best_chi2 = jnp.minimum(best_chi2, chi2_vals)
+            next_best_params_u = jax.tree_util.tree_map(
+                lambda bp, p: jnp.where(
+                    is_better.reshape((num_chains,) + (1,) * (p.ndim - 1)), p, bp
+                ),
+                best_params_u,
+                params_u,
+            )
+            next_best_coefs = jnp.where(is_better[:, None], new_coefs, best_coefs)
+
+            updates, next_opt_state = jax.vmap(optimizer.update)(grads, opt_state, params_u)
+            scaled_updates = jax.tree_util.tree_map(lambda u: current_step_size * u, updates)
+            next_params_u = optax.apply_updates(params_u, scaled_updates)
+
+            metric_now = jnp.min(chi2_vals)
+            improved_lr = metric_now < (best_metric_global - lr_min_delta)
+            improved_es = metric_now < (best_metric_global - early_stopping_min_delta)
+            next_best_metric_global = jnp.minimum(best_metric_global, metric_now)
+
+            next_lr_bad_count = jnp.where(improved_lr, 0, lr_bad_count + 1)
+            next_es_bad_count = jnp.where(improved_es, 0, es_bad_count + 1)
+
+            decay_hit = enable_lr_decay & (next_lr_bad_count >= lr_patience)
+            decayed_step_size = jnp.maximum(current_step_size * lr_decay_factor, min_step_size)
+            next_step_size = jnp.where(decay_hit, decayed_step_size, current_step_size)
+            next_lr_bad_count = jnp.where(decay_hit, 0, next_lr_bad_count)
+
+            next_done = enable_early_stopping & (next_es_bad_count >= early_stopping_patience)
+
+            next_carry = (
+                next_params_u,
+                next_opt_state,
+                next_best_params_u,
+                next_best_chi2,
+                new_coefs,
+                next_best_coefs,
+                next_step_size,
+                next_best_metric_global,
+                next_lr_bad_count,
+                next_es_bad_count,
+                next_done,
+                chi2_vals,
+            )
+            return next_carry, (chi2_vals, current_step_size)
+
+        return jax.lax.cond(done, _done_branch, _active_branch, operand=None)
 
     # 4. Execute the JAX Scan
     start_time = time.time()
-    carry0 = (params_u0, opt_state0, best_params_u0, best_chi2_0, prev_coefs0, best_coefs0)
-    carry_f, chi2_hist = jax.lax.scan(step, carry0, xs=None, length=int(num_steps))
+    carry0 = (
+        params_u0,
+        opt_state0,
+        best_params_u0,
+        best_chi2_0,
+        prev_coefs0,
+        best_coefs0,
+        jnp.asarray(step_size, dtype=image_data_j.dtype),
+        jnp.asarray(jnp.inf, dtype=image_data_j.dtype),
+        jnp.asarray(0, dtype=jnp.int32),
+        jnp.asarray(0, dtype=jnp.int32),
+        jnp.asarray(False),
+        jnp.full((num_chains,), jnp.inf, dtype=image_data_j.dtype),
+    )
+    @jax.jit
+    def _run_scan(carry_init):
+        return jax.lax.scan(step, carry_init, jnp.arange(int(num_steps)))
+
+    carry_f, (chi2_hist, lr_hist) = _run_scan(carry0)
     end_time = time.time()
     print(f"[optax] Optimization run time: {end_time - start_time:.2f} seconds")
     # 5. Extract Best Global Chain
 
-    _, _, best_params_u_f, best_chi2_f, _, best_coefs_f = carry_f
+    _, _, best_params_u_f, best_chi2_f, _, best_coefs_f, final_step_size, _, _, _, done_f, _ = carry_f
     best_chain = jnp.argmin(best_chi2_f)
     best_params_u = tree_take0(best_params_u_f, best_chain)
     best_params = prob_model.constrain(best_params_u)
@@ -166,11 +269,20 @@ def run_optax(
     best_nnls_coefs = (
         np.asarray(best_coefs_f[best_chain]) if use_nnls else None
     )
+    print(f"[optax] Final step size: {float(final_step_size):.4e}")
+    if enable_early_stopping:
+        print(f"[optax] Early stopping triggered: {bool(done_f)}")
 
     if return_history:
-        return best_params, np.asarray(chi2_hist), best_chi2, best_nnls_coefs
+        return (
+            best_params,
+            np.asarray(chi2_hist),
+            best_chi2,
+            best_nnls_coefs,
+            np.asarray(lr_hist),
+        )
 
-    return best_params, None, best_chi2, best_nnls_coefs
+    return best_params, None, best_chi2, best_nnls_coefs, None
 
 
 def run_emcee(
